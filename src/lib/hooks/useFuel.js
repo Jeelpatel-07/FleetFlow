@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase';
 
-// Real fuel_logs schema: id, vehicle_id, liters, cost, date
+// Real fuel_logs schema: id, vehicle_id, liters, cost, date, odometer_reading
 export function useFuel() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);

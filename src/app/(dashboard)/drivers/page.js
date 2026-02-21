@@ -9,7 +9,7 @@ import ConfirmModal from '@/components/ConfirmModal';
 import EmptyState from '@/components/EmptyState';
 import { Plus, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 
-const EMPTY = { name: '', license_type: '', license_expiry: '', status: 'Off Duty' };
+const EMPTY = { name: '', license_type: '', license_expiry: '', status: 'Off Duty', safety_score: 100 };
 const LICENSE_TYPES = ['Light Motor Vehicle', 'Heavy Motor Vehicle', 'Commercial', 'Hazardous Goods', 'Passenger'];
 
 export default function DriversPage() {
@@ -35,6 +35,7 @@ export default function DriversPage() {
       license_type: form.license_type,
       license_expiry: form.license_expiry || null,
       status: form.status || 'Off Duty',
+      safety_score: form.safety_score ? parseFloat(form.safety_score) : 100,
     };
     try {
       if (editTarget) {
@@ -87,7 +88,15 @@ export default function DriversPage() {
     },
     { key: 'license_type', label: 'License Type', accessor: 'license_type', render: r => <span style={{ fontSize: '13px' }}>{r.license_type || '—'}</span> },
     { key: 'license_expiry', label: 'Expiry', accessor: 'license_expiry', render: r => expiryBadge(r.license_expiry) },
-    { key: 'phone', label: 'Phone', accessor: 'phone', render: r => r.phone || <span className="text-muted">—</span> },
+    { key: 'safety_score', label: 'Safety Score', accessor: 'safety_score',
+      render: r => {
+        const score = r.safety_score ?? 100;
+        let color = '#22c55e';
+        if (score < 70) color = '#ef4444';
+        else if (score < 85) color = '#f97316';
+        return <span style={{ fontWeight: '600', color }}>{score}/100</span>;
+      }
+    },
     { key: 'status', label: 'Status', accessor: 'status', render: r => <StatusBadge status={r.status} /> },
     { key: 'actions', label: 'Actions', sortable: false,
       render: r => (
@@ -164,6 +173,10 @@ export default function DriversPage() {
               <div className="form-group">
                 <label className="form-label">License Expiry</label>
                 <input className="form-input" type="date" value={form.license_expiry} onChange={e => setForm(f => ({ ...f, license_expiry: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Safety Score</label>
+                <input className="form-input" type="number" min="0" max="100" value={form.safety_score} onChange={e => setForm(f => ({ ...f, safety_score: e.target.value }))} placeholder="e.g. 95" />
               </div>
               <div className="form-group">
                 <label className="form-label">Status</label>
