@@ -14,7 +14,7 @@ export function useTrips() {
       .from('trips')
       .select(`
         *,
-        vehicles(id, model, license_plate, max_capacity),
+        vehicles(id, model, license_plate, max_capacity, odometer),
         drivers(id, name, license_type)
       `);
     if (error) { setError(error.message); }
@@ -40,7 +40,7 @@ export function useTrips() {
       const { data, error } = await supabase
         .from('trips')
         .insert([{ ...trip, status: 'Draft' }])
-        .select(`*, vehicles(id,model,license_plate,max_capacity), drivers(id,name,license_type)`)
+        .select(`*, vehicles(id,model,license_plate,max_capacity,odometer), drivers(id,name,license_type)`)
         .single();
       if (error) throw error;
       setTrips(prev => prev.map(t => t.id === tempId ? data : t));
@@ -62,12 +62,22 @@ export function useTrips() {
     } catch (e) { await fetch(); throw e; }
   };
 
-  const completeTrip = async (id, vehicleId, driverId) => {
-    setTrips(pt => pt.map(t => t.id === id ? { ...t, status: 'Completed' } : t));
+  const completeTrip = async (id, vehicleId, driverId, finalOdometer) => {
+    setTrips(pt => pt.map(t => t.id === id ? { ...t, status: 'Completed', final_odometer: finalOdometer } : t));
     try {
-      const { error: tErr } = await supabase.from('trips').update({ status: 'Completed' }).eq('id', id);
+      const updateData = { status: 'Completed' };
+      if (finalOdometer) {
+        updateData.final_odometer = parseFloat(finalOdometer);
+      }
+      const { error: tErr } = await supabase.from('trips').update(updateData).eq('id', id);
       if (tErr) throw tErr;
-      if (vehicleId) await supabase.from('vehicles').update({ status: 'Available' }).eq('id', vehicleId);
+      if (vehicleId) {
+        const vehicleUpdate = { status: 'Available' };
+        if (finalOdometer) {
+          vehicleUpdate.odometer = parseFloat(finalOdometer);
+        }
+        await supabase.from('vehicles').update(vehicleUpdate).eq('id', vehicleId);
+      }
       if (driverId) await supabase.from('drivers').update({ status: 'Off Duty' }).eq('id', driverId);
       await fetch();
     } catch (e) { await fetch(); throw e; }

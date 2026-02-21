@@ -9,14 +9,14 @@ import StatusBadge from '@/components/StatusBadge';
 import FormModal from '@/components/FormModal';
 import ConfirmModal from '@/components/ConfirmModal';
 import EmptyState from '@/components/EmptyState';
-import { Plus, Send, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { Plus, Send, CheckCircle, XCircle, Trash2, AlertTriangle } from 'lucide-react';
 
-const EMPTY = { vehicle_id: '', driver_id: '', cargo_weight: '' };
+const EMPTY = { vehicle_id: '', driver_id: '', cargo_weight: '', origin: '', destination: '', notes: '', final_odometer: '' };
 
 export default function TripsPage() {
   const { trips, loading, error, refetch, addTrip, dispatchTrip, completeTrip, cancelTrip, deleteTrip } = useTrips();
   const { vehicles } = useVehicles();
-  const { drivers, loading: driversLoading, error: driversError } = useDrivers();
+  const { drivers, loading: driversLoading, error: driversError, getDaysToExpiry } = useDrivers();
   const toast = useToast();
 
   const [showModal, setShowModal] = useState(false);
@@ -24,17 +24,32 @@ export default function TripsPage() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [completionData, setCompletionData] = useState({ trip: null, finalOdometer: '' });
 
   const openAdd = () => { setForm(EMPTY); setFormError(''); setShowModal(true); };
   const closeModal = () => { setShowModal(false); setFormError(''); };
 
   const availableVehicles = vehicles.filter(v => v.status === 'Available');
+  
+  // Only allow drivers with valid (non-expired) licenses
+  const availableDrivers = drivers.filter(d => {
+    const daysToExpiry = getDaysToExpiry(d.license_expiry);
+    return daysToExpiry === null || daysToExpiry >= 0;
+  });
 
   const selectedVehicle = vehicles.find(v => v.id === form.vehicle_id);
 
   const validateForm = () => {
     if (!form.vehicle_id) return 'Select a vehicle.';
     if (!form.driver_id) return 'Select a driver.';
+    // Check if selected driver has expired license
+    const selectedDriver = drivers.find(d => d.id === form.driver_id);
+    if (selectedDriver) {
+      const daysToExpiry = getDaysToExpiry(selectedDriver.license_expiry);
+      if (daysToExpiry !== null && daysToExpiry < 0) {
+        return `Driver's license has expired. Cannot assign trips.`;
+      }
+    }
     if (form.cargo_weight) {
       const cw = parseFloat(form.cargo_weight);
       if (isNaN(cw) || cw <= 0) return 'Cargo weight must be a positive number.';
@@ -53,6 +68,9 @@ export default function TripsPage() {
         vehicle_id: form.vehicle_id,
         driver_id: form.driver_id,
         cargo_weight: form.cargo_weight ? parseFloat(form.cargo_weight) : null,
+        origin: form.origin?.trim() || null,
+        destination: form.destination?.trim() || null,
+        notes: form.notes?.trim() || null,
       });
       toast.success('Trip created as Draft.');
       closeModal();
@@ -72,8 +90,8 @@ export default function TripsPage() {
         await dispatchTrip(trip.id, trip.vehicle_id, trip.driver_id);
         toast.success('Trip dispatched — vehicle and driver set to On Trip/On Duty.');
       } else if (type === 'complete') {
-        await completeTrip(trip.id, trip.vehicle_id, trip.driver_id);
-        toast.success('Trip completed. Vehicle and driver now Available.');
+        // Show modal for final odometer entry
+        setCompletionData({ trip, finalOdometer: trip.vehicles?.odometer || '' });
       } else if (type === 'cancel') {
         await cancelTrip(trip.id, trip.vehicle_id, trip.driver_id, trip.status);
         toast.warning('Trip cancelled.');
@@ -105,6 +123,20 @@ export default function TripsPage() {
     },
     { key: 'driver', label: 'Driver', sortable: false,
       render: r => r.drivers ? <span style={{ fontSize: '13px' }}>{r.drivers.name}</span> : <span className="text-muted">—</span>
+    },
+    { key: 'route', label: 'Route', sortable: false,
+      render: r => (
+        <div style={{ fontSize: '13px' }}>
+          {r.origin && r.destination ? (
+            <span>{r.origin} → {r.destination}</span>
+          ) : (r.origin || r.destination) ? (
+            <span>{r.origin || r.destination}</span>
+          ) : (
+            <span className="text-muted">—</span>
+          )}
+          {r.notes && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>📝 {r.notes}</div>}
+        </div>
+      )
     },
     { key: 'cargo_weight', label: 'Cargo (kg)', accessor: 'cargo_weight',
       render: r => r.cargo_weight ? `${Number(r.cargo_weight).toLocaleString()} kg` : <span className="text-muted">—</span>
@@ -212,11 +244,16 @@ export default function TripsPage() {
                 ) : (
                   <>
                     <select className="form-select" value={form.driver_id} onChange={e => setForm(f => ({ ...f, driver_id: e.target.value }))}>
-                      <option value="">Select driver... ({drivers.length} available)</option>
-                      {drivers.map(d => <option key={d.id} value={d.id}>{d.name} ({d.license_type || 'No licence type'})</option>)}
+                      <option value="">Select driver... ({availableDrivers.length} available)</option>
+                      {availableDrivers.map(d => <option key={d.id} value={d.id}>{d.name} ({d.license_type || 'No licence type'})</option>)}
                     </select>
-                    {drivers.length === 0 && (
-                      <div style={{ fontSize: '12px', color: '#eab308', marginTop: '4px' }}>No drivers found. Add drivers in the Drivers section first.</div>
+                    {drivers.length > availableDrivers.length && (
+                      <div style={{ fontSize: '12px', color: '#eab308', marginTop: '6px', background: 'rgba(234,179,8,0.08)', padding: '8px', borderRadius: '4px' }}>
+                        <AlertTriangle size={12} style={{ display: 'inline', marginRight: '4px' }} /> {drivers.length - availableDrivers.length} driver{drivers.length - availableDrivers.length !== 1 ? 's' : ''} excluded (expired license).
+                      </div>
+                    )}
+                    {availableDrivers.length === 0 && (
+                      <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px' }}>❌ No drivers available. All have expired licenses.</div>
                     )}
                   </>
                 )}
@@ -224,6 +261,18 @@ export default function TripsPage() {
               <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                 <label className="form-label">Cargo Weight (kg) <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
                 <input className="form-input" type="number" value={form.cargo_weight} onChange={e => setForm(f => ({ ...f, cargo_weight: e.target.value }))} placeholder={selectedVehicle?.max_capacity ? `Max: ${selectedVehicle.max_capacity} kg` : 'e.g. 5000'} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Origin <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                <input className="form-input" value={form.origin} onChange={e => setForm(f => ({ ...f, origin: e.target.value }))} placeholder="e.g. Mumbai Warehouse" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Destination <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                <input className="form-input" value={form.destination} onChange={e => setForm(f => ({ ...f, destination: e.target.value }))} placeholder="e.g. Delhi Distribution Center" />
+              </div>
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label className="form-label">Notes <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                <textarea className="form-input" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="e.g. Fragile cargo, refrigerated storage required" style={{ minHeight: '80px', resize: 'vertical' }} />
               </div>
             </div>
           </div>
@@ -239,6 +288,49 @@ export default function TripsPage() {
           onConfirm={executeAction}
           onCancel={() => setConfirmAction(null)}
         />
+      )}
+
+      {completionData.trip && (
+        <FormModal title="Complete Trip" onClose={() => setCompletionData({ trip: null, finalOdometer: '' })}
+          footer={<>
+            <button className="btn btn-secondary" onClick={() => setCompletionData({ trip: null, finalOdometer: '' })}>Cancel</button>
+            <button className="btn btn-primary" onClick={async () => {
+              if (!completionData.finalOdometer) {
+                toast.error('Final odometer reading is required.');
+                return;
+              }
+              setSaving(true);
+              try {
+                await completeTrip(completionData.trip.id, completionData.trip.vehicle_id, completionData.trip.driver_id, completionData.finalOdometer);
+                toast.success('Trip completed. Vehicle odometer updated and driver set to Off Duty.');
+                setCompletionData({ trip: null, finalOdometer: '' });
+              } catch (e) {
+                toast.error(`Completion failed: ${e.message}`);
+              }
+              setSaving(false);
+            }} disabled={saving}>{saving ? 'Completing...' : 'Complete Trip'}</button>
+          </>}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '8px', padding: '12px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+              Completing trip for <strong>{completionData.trip?.vehicles?.model}</strong> (license plate: <code>{completionData.trip?.vehicles?.license_plate}</code>)
+            </div>
+            <div className="form-group">
+              <label className="form-label">Final Odometer Reading (km) *</label>
+              <input 
+                className="form-input" 
+                type="number" 
+                value={completionData.finalOdometer} 
+                onChange={e => setCompletionData(d => ({ ...d, finalOdometer: e.target.value }))} 
+                placeholder={`Current: ${completionData.trip?.vehicles?.odometer || 'N/A'} km`}
+                autoFocus
+              />
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                This will update the vehicle's odometer and complete the trip.
+              </div>
+            </div>
+          </div>
+        </FormModal>
       )}
     </div>
   );

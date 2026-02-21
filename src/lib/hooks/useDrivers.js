@@ -77,5 +77,16 @@ export function useDrivers() {
     return Math.ceil((new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24));
   };
 
-  return { drivers, loading, error, refetch: fetch, addDriver, updateDriver, deleteDriver, getDaysToExpiry };
+  // Helper: calculate trip completion rate for a driver
+  const getCompletionRate = useCallback(async (driverId) => {
+    const { data: trips, error } = await supabase
+      .from('trips')
+      .select('id, status')
+      .eq('driver_id', driverId);
+    if (error || !trips) return 0;
+    const completed = trips.filter(t => t.status === 'Completed').length;
+    return trips.length > 0 ? Math.round((completed / trips.length) * 100) : 0;
+  }, []);
+
+  return { drivers, loading, error, refetch: fetch, addDriver, updateDriver, deleteDriver, getDaysToExpiry, getCompletionRate };
 }

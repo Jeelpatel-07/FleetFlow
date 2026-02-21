@@ -7,12 +7,13 @@ import DataTable from '@/components/DataTable';
 import FormModal from '@/components/FormModal';
 import ConfirmModal from '@/components/ConfirmModal';
 import EmptyState from '@/components/EmptyState';
-import { Plus, Trash2, Wrench, DollarSign } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, Wrench, DollarSign } from 'lucide-react';
 
-const EMPTY = { vehicle_id: '', description: '', cost: '', date: '' };
+const EMPTY = { vehicle_id: '', service_type: '', description: '', cost: '', date: '' };
+const SERVICE_TYPES = ['Oil Change', 'Brake Service', 'Tire Replacement', 'Engine Repair', 'Transmission Service', 'Electrical Repair', 'Suspension Service', 'General Inspection', 'Warranty Service', 'Other'];
 
 export default function MaintenancePage() {
-  const { logs, loading, error, refetch, addLog, deleteLog } = useMaintenance();
+  const { logs, loading, error, refetch, addLog, completeLog, deleteLog } = useMaintenance();
   const { vehicles } = useVehicles();
   const toast = useToast();
 
@@ -21,6 +22,7 @@ export default function MaintenancePage() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmComplete, setConfirmComplete] = useState(null);
 
   const openAdd = () => { setForm({ ...EMPTY, date: new Date().toISOString().split('T')[0] }); setFormError(''); setShowModal(true); };
   const closeModal = () => { setShowModal(false); setFormError(''); };
@@ -32,6 +34,7 @@ export default function MaintenancePage() {
     try {
       await addLog({
         vehicle_id: form.vehicle_id,
+        service_type: form.service_type || null,
         description: form.description.trim(),
         cost: form.cost ? parseFloat(form.cost) : null,
         date: form.date || new Date().toISOString().split('T')[0],
@@ -57,6 +60,18 @@ export default function MaintenancePage() {
     }
   };
 
+  const handleComplete = async () => {
+    if (!confirmComplete) return;
+    try {
+      await completeLog(confirmComplete.id, confirmComplete.vehicle_id);
+      toast.success(`${confirmComplete.vehicles?.model} maintenance completed and restored to Available.`);
+      setConfirmComplete(null);
+    } catch (e) {
+      toast.error(`Completion failed: ${e.message}`);
+      setConfirmComplete(null);
+    }
+  };
+
   const totalCost = logs.reduce((s, l) => s + (parseFloat(l.cost) || 0), 0);
   const inShopCount = vehicles.filter(v => v.status === 'In Shop').length;
 
@@ -69,6 +84,13 @@ export default function MaintenancePage() {
         </div>
       ) : <span className="text-muted">—</span>
     },
+    { key: 'service_type', label: 'Service', accessor: 'service_type',
+      render: r => r.service_type ? (
+        <span style={{ fontSize: '13px', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', padding: '2px 8px', borderRadius: '4px' }}>
+          {r.service_type}
+        </span>
+      ) : <span className="text-muted">—</span>
+    },
     { key: 'description', label: 'Description', accessor: 'description',
       render: r => <span style={{ fontSize: '13px' }}>{r.description || '—'}</span>
     },
@@ -78,11 +100,34 @@ export default function MaintenancePage() {
     { key: 'date', label: 'Date', accessor: 'date',
       render: r => r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
     },
+    { key: 'status', label: 'Status', sortable: false,
+      render: r => r.completed_at ? (
+        <span style={{ fontSize: '12px', background: 'rgba(34,197,94,0.1)', color: '#22c55e', padding: '4px 8px', borderRadius: '4px', fontWeight: '600' }}>
+          ✓ Completed
+        </span>
+      ) : (
+        <span style={{ fontSize: '12px', background: 'rgba(249,115,22,0.1)', color: '#f97316', padding: '4px 8px', borderRadius: '4px', fontWeight: '600' }}>
+          ⚙ In Maintenance
+        </span>
+      )
+    },
     { key: 'actions', label: 'Actions', sortable: false,
       render: r => (
-        <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(r)} style={{ fontSize: '11px', padding: '4px 8px' }}>
-          <Trash2 size={10} />
-        </button>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {!r.completed_at && (
+            <button 
+              className="btn btn-sm" 
+              style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontSize: '11px', padding: '4px 8px' }}
+              onClick={() => setConfirmComplete(r)}
+              title="Mark this maintenance as done and restore vehicle to Available"
+            >
+              <CheckCircle size={10} /> Done
+            </button>
+          )}
+          <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(r)} style={{ fontSize: '11px', padding: '4px 8px' }}>
+            <Trash2 size={10} />
+          </button>
+        </div>
       )
     },
   ];
@@ -142,6 +187,17 @@ export default function MaintenancePage() {
                   {vehicles.map(v => <option key={v.id} value={v.id}>{v.model} — {v.license_plate} ({v.status})</option>)}
                 </select>
               </div>
+              <div className="form-group">
+                <label className="form-label">Service Type <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                <select className="form-select" value={form.service_type} onChange={e => setForm(f => ({ ...f, service_type: e.target.value }))}>
+                  <option value="">Select type...</option>
+                  {SERVICE_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Date</label>
+                <input className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+              </div>
               <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                 <label className="form-label">Description *</label>
                 <input className="form-input" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Oil change, brake pad replacement..." />
@@ -149,10 +205,6 @@ export default function MaintenancePage() {
               <div className="form-group">
                 <label className="form-label">Cost ($)</label>
                 <input className="form-input" type="number" step="0.01" value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} placeholder="e.g. 250.00" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Date</label>
-                <input className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
               </div>
             </div>
           </div>
@@ -167,6 +219,17 @@ export default function MaintenancePage() {
           confirmStyle="danger"
           onConfirm={handleDelete}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {confirmComplete && (
+        <ConfirmModal
+          title="Complete Maintenance"
+          message={`Mark maintenance as done for "${confirmComplete.vehicles?.model || 'vehicle'}"? This will restore the vehicle status to Available.`}
+          confirmLabel="Mark Complete"
+          confirmStyle="primary"
+          onConfirm={handleComplete}
+          onCancel={() => setConfirmComplete(null)}
         />
       )}
     </div>

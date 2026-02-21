@@ -9,7 +9,7 @@ import ConfirmModal from '@/components/ConfirmModal';
 import EmptyState from '@/components/EmptyState';
 import { Plus, Trash2, Fuel, DollarSign, Droplets } from 'lucide-react';
 
-const EMPTY = { vehicle_id: '', liters: '', cost: '', date: '' };
+const EMPTY = { vehicle_id: '', liters: '', cost: '', date: '', odometer_reading: '' };
 
 export default function FuelPage() {
   const { logs, loading, error, refetch, addLog, deleteLog } = useFuel();
@@ -36,6 +36,7 @@ export default function FuelPage() {
         liters: parseFloat(form.liters),
         cost: parseFloat(form.cost),
         date: form.date || new Date().toISOString().split('T')[0],
+        odometer_reading: form.odometer_reading ? parseFloat(form.odometer_reading) : null,
       });
       toast.success('Fuel log added.');
       closeModal();
@@ -82,6 +83,9 @@ export default function FuelPage() {
         const cpl = r.liters > 0 ? (r.cost / r.liters).toFixed(2) : null;
         return cpl ? <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>${cpl}</span> : <span className="text-muted">—</span>;
       }
+    },
+    { key: 'odometer_reading', label: 'Odometer (km)', accessor: 'odometer_reading',
+      render: r => r.odometer_reading ? `${Number(r.odometer_reading).toLocaleString()} km` : <span className="text-muted">—</span>
     },
     { key: 'date', label: 'Date', accessor: 'date',
       render: r => r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
@@ -158,7 +162,11 @@ export default function FuelPage() {
                 <label className="form-label">Cost ($) *</label>
                 <input className="form-input" type="number" step="0.01" value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} placeholder="e.g. 85.00" />
               </div>
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <div className="form-group">
+                <label className="form-label">Odometer (km) <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                <input className="form-input" type="number" value={form.odometer_reading} onChange={e => setForm(f => ({ ...f, odometer_reading: e.target.value }))} placeholder="e.g. 45230" />
+              </div>
+              <div className="form-group">
                 <label className="form-label">Date</label>
                 <input className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
               </div>
